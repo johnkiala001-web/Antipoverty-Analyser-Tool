@@ -48,6 +48,29 @@ Every package extends `tsconfig.base.json` which sets `composite: true`. The roo
 - `pnpm run build` — runs `typecheck` first, then recursively runs `build` in all packages that define it
 - `pnpm run typecheck` — runs `tsc --build --emitDeclarationOnly` using project references
 
+## Python: Deriv Tick Analyzer
+
+**File**: `deriv_analyzer.py`
+
+A standalone Python program that connects to the Deriv WebSocket API to stream real-time tick data for synthetic indices and compute trade recommendations.
+
+**Features:**
+- Connects to `wss://ws.binaryws.com/websockets/v3` (app_id=1089, no API key required)
+- Pre-loads historical ticks, then streams live ticks
+- Volatility: standard deviation, ATR, high/low range
+- Last-digit analysis: Even/Odd and Matches/Differs probabilities
+- Over/Under probabilities via momentum + mean-reversion blending
+- Live-updating colour terminal display (tabulate + colorama)
+- `MLPredictor` stub for future AI/ML integration
+
+**Run:** `python3 deriv_analyzer.py [SYMBOL]` — default symbol `R_50` (Volatility 50 Index)
+
+**Symbols:** `R_10`, `R_25`, `R_50`, `R_75`, `R_100`, `CRASH1000`, `BOOM1000`, `stpRNG`
+
+**Dependencies:** `websocket-client`, `pandas`, `numpy`, `requests`, `tabulate`, `colorama`
+
+---
+
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
