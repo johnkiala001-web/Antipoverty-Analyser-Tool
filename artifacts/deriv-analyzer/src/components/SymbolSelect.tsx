@@ -3,18 +3,39 @@ import { ChevronDown, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
-const SYMBOLS = [
-  { id: "R_10", name: "Volatility 10 Index" },
-  { id: "R_25", name: "Volatility 25 Index" },
-  { id: "R_50", name: "Volatility 50 Index" },
-  { id: "R_75", name: "Volatility 75 Index" },
-  { id: "R_100", name: "Volatility 100 Index" },
-  { id: "CRASH1000", name: "Crash 1000 Index" },
-  { id: "BOOM1000", name: "Boom 1000 Index" },
-  { id: "CRASH500", name: "Crash 500 Index" },
-  { id: "BOOM500", name: "Boom 500 Index" },
-  { id: "stpRNG", name: "Step Index" },
+interface SymbolEntry {
+  id: string;
+  name: string;
+  group: string;
+}
+
+const SYMBOLS: SymbolEntry[] = [
+  // ── Continuous Volatility (normal tick rate) ──────────────────────────────
+  { id: "R_10",  name: "Volatility 10 Index",      group: "Volatility" },
+  { id: "R_25",  name: "Volatility 25 Index",      group: "Volatility" },
+  { id: "R_50",  name: "Volatility 50 Index",      group: "Volatility" },
+  { id: "R_75",  name: "Volatility 75 Index",      group: "Volatility" },
+  { id: "R_100", name: "Volatility 100 Index",     group: "Volatility" },
+
+  // ── Volatility (1s) — one tick per second ─────────────────────────────────
+  { id: "1HZ10V",  name: "Volatility 10 (1s) Index",  group: "Volatility (1s)" },
+  { id: "1HZ25V",  name: "Volatility 25 (1s) Index",  group: "Volatility (1s)" },
+  { id: "1HZ50V",  name: "Volatility 50 (1s) Index",  group: "Volatility (1s)" },
+  { id: "1HZ75V",  name: "Volatility 75 (1s) Index",  group: "Volatility (1s)" },
+  { id: "1HZ100V", name: "Volatility 100 (1s) Index", group: "Volatility (1s)" },
+
+  // ── Crash / Boom ──────────────────────────────────────────────────────────
+  { id: "CRASH1000", name: "Crash 1000 Index",  group: "Crash/Boom" },
+  { id: "CRASH500",  name: "Crash 500 Index",   group: "Crash/Boom" },
+  { id: "BOOM1000",  name: "Boom 1000 Index",   group: "Crash/Boom" },
+  { id: "BOOM500",   name: "Boom 500 Index",    group: "Crash/Boom" },
+
+  // ── Other ─────────────────────────────────────────────────────────────────
+  { id: "stpRNG", name: "Step Index", group: "Other" },
 ];
+
+// Build an ordered list of unique groups
+const GROUPS = Array.from(new Set(SYMBOLS.map((s) => s.group)));
 
 interface SymbolSelectProps {
   value: string;
@@ -26,12 +47,20 @@ export function SymbolSelect({ value, onChange }: SymbolSelectProps) {
   const [search, setSearch] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selected = SYMBOLS.find((s) => s.id === value) || SYMBOLS[0];
+  const selected = SYMBOLS.find((s) => s.id === value) ?? SYMBOLS[0];
   const filtered = SYMBOLS.filter(
     (s) =>
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.id.toLowerCase().includes(search.toLowerCase())
   );
+
+  // Group filtered results
+  const groupedFiltered: Record<string, SymbolEntry[]> = {};
+  filtered.forEach((s) => {
+    if (!groupedFiltered[s.group]) groupedFiltered[s.group] = [];
+    groupedFiltered[s.group].push(s);
+  });
+  const visibleGroups = GROUPS.filter((g) => groupedFiltered[g]?.length);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -47,7 +76,7 @@ export function SymbolSelect({ value, onChange }: SymbolSelectProps) {
   }, []);
 
   return (
-    <div className="relative w-64" ref={containerRef}>
+    <div className="relative w-72" ref={containerRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
@@ -81,41 +110,55 @@ export function SymbolSelect({ value, onChange }: SymbolSelectProps) {
             transition={{ duration: 0.15, ease: "easeOut" }}
             className="absolute z-50 w-full mt-2 bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
           >
+            {/* Search */}
             <div className="p-2 border-b border-border flex items-center gap-2">
-              <Search className="w-4 h-4 text-muted-foreground ml-1" />
+              <Search className="w-4 h-4 text-muted-foreground ml-1 shrink-0" />
               <input
                 type="text"
                 placeholder="Search markets..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+                autoFocus
               />
             </div>
-            <div className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
-              {filtered.length === 0 ? (
+
+            {/* Grouped list */}
+            <div className="max-h-72 overflow-y-auto p-1 custom-scrollbar">
+              {visibleGroups.length === 0 ? (
                 <div className="p-4 text-center text-sm text-muted-foreground">
                   No markets found
                 </div>
               ) : (
-                filtered.map((symbol) => (
-                  <button
-                    key={symbol.id}
-                    onClick={() => {
-                      onChange(symbol.id);
-                      setIsOpen(false);
-                      setSearch("");
-                    }}
-                    className={cn(
-                      "w-full flex items-center justify-between px-3 py-2.5 rounded-md text-sm",
-                      "transition-colors duration-150",
-                      value === symbol.id
-                        ? "bg-primary/10 text-primary"
-                        : "text-foreground hover:bg-white/5"
-                    )}
-                  >
-                    <span className="font-mono">{symbol.name}</span>
-                    <span className="text-xs opacity-50">{symbol.id}</span>
-                  </button>
+                visibleGroups.map((group) => (
+                  <div key={group}>
+                    {/* Group header */}
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      {group}
+                    </div>
+                    {groupedFiltered[group].map((symbol) => (
+                      <button
+                        key={symbol.id}
+                        onClick={() => {
+                          onChange(symbol.id);
+                          setIsOpen(false);
+                          setSearch("");
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between px-3 py-2 rounded-md text-sm",
+                          "transition-colors duration-150",
+                          value === symbol.id
+                            ? "bg-primary/10 text-primary"
+                            : "text-foreground hover:bg-white/5"
+                        )}
+                      >
+                        <span className="font-mono text-[13px]">{symbol.name}</span>
+                        <span className="text-[10px] opacity-40 font-mono ml-2">
+                          {symbol.id}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 ))
               )}
             </div>

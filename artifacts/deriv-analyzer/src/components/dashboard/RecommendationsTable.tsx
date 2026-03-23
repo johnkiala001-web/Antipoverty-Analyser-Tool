@@ -41,7 +41,7 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
             AI Trade Recommendations
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            Real-time computed probabilities based on momentum and volatility
+            Optimal barrier and digit computed from live digit-frequency distribution
           </p>
         </div>
       </div>
@@ -50,19 +50,23 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
         <table className="w-full text-left text-sm whitespace-nowrap">
           <thead className="bg-white/[0.02] border-b border-border">
             <tr>
-              <th className="px-6 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
                 Contract
               </th>
-              <th className="px-6 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
                 Direction
               </th>
-              <th className="px-6 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest w-64">
+              {/* Specific trade suggestion — e.g. "Over 3", "Match 7", "Differs ≠ 4" */}
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
+                Suggested Trade
+              </th>
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest w-60">
                 Probability
               </th>
-              <th className="px-6 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest">
                 Confidence
               </th>
-              <th className="px-6 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest text-center">
+              <th className="px-5 py-4 font-semibold text-xs text-muted-foreground uppercase tracking-widest text-center">
                 Action
               </th>
             </tr>
@@ -75,15 +79,41 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
               return (
                 <tr
                   key={idx}
-                  className="hover:bg-white/[0.02] transition-colors duration-200"
+                  className={`transition-colors duration-200 ${
+                    row.recommended
+                      ? "bg-primary/[0.04] hover:bg-primary/[0.07]"
+                      : "hover:bg-white/[0.02]"
+                  }`}
                 >
-                  <td className="px-6 py-4 font-medium text-foreground">
-                    {row.contract}
+                  {/* Contract — only show label on first row of each group */}
+                  <td className="px-5 py-4 font-medium text-foreground">
+                    {idx % 2 === 0 ? row.contract : ""}
                   </td>
-                  <td className="px-6 py-4 font-mono">{row.direction}</td>
-                  <td className="px-6 py-4">
+
+                  {/* Direction */}
+                  <td className="px-5 py-4 font-mono text-muted-foreground">
+                    {row.direction}
+                  </td>
+
+                  {/* Suggested Trade — highlighted when recommended */}
+                  <td className="px-5 py-4">
+                    <span
+                      className={`inline-flex items-center gap-1.5 font-mono font-bold text-sm px-3 py-1 rounded-md border ${
+                        row.recommended
+                          ? "text-primary bg-primary/10 border-primary/30"
+                          : "text-foreground/60 bg-white/[0.03] border-border/50"
+                      }`}
+                    >
+                      {row.tradeLabel}
+                    </span>
+                  </td>
+
+                  {/* Probability bar */}
+                  <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
-                      <span className="font-mono text-sm w-12">{percentage}%</span>
+                      <span className="font-mono text-sm w-12 tabular-nums">
+                        {percentage}%
+                      </span>
                       <div className="flex-1 h-2 bg-background rounded-full overflow-hidden border border-border/50">
                         <div
                           className={`h-full rounded-full transition-all duration-500 ease-out ${conf.bar}`}
@@ -92,20 +122,24 @@ export function RecommendationsTable({ rows }: RecommendationsTableProps) {
                       </div>
                     </div>
                   </td>
-                  <td className="px-6 py-4">
+
+                  {/* Confidence badge */}
+                  <td className="px-5 py-4">
                     <span
                       className={`inline-flex items-center px-2.5 py-1 rounded border text-[10px] font-bold tracking-widest ${conf.bg} ${conf.color}`}
                     >
                       {conf.label}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-center">
+
+                  {/* Recommended checkmark */}
+                  <td className="px-5 py-4 text-center">
                     {row.recommended ? (
-                      <div className="mx-auto w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shadow-[0_0_10px_rgba(var(--primary),0.3)]">
+                      <div className="mx-auto w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shadow-[0_0_10px_rgba(99,102,241,0.3)]">
                         <Check className="w-4 h-4 text-primary" />
                       </div>
                     ) : (
-                      <span className="text-muted-foreground/30">-</span>
+                      <span className="text-muted-foreground/30">—</span>
                     )}
                   </td>
                 </tr>
