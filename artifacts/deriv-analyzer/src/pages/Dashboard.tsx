@@ -1,34 +1,37 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Header } from "@/components/dashboard/Header";
 import { ChartPanel } from "@/components/dashboard/ChartPanel";
 import { MetricsPanel } from "@/components/dashboard/MetricsPanel";
-import { DigitDistribution } from "@/components/dashboard/DigitDistribution";
+import { DigitCircles } from "@/components/dashboard/DigitCircles";
 import { RecommendationsTable } from "@/components/dashboard/RecommendationsTable";
+import { AllVolatilitiesGrid } from "@/components/dashboard/AllVolatilitiesGrid";
 import { useDerivWebSocket } from "@/hooks/use-deriv-ws";
 import { motion } from "framer-motion";
+
+const container = {
+  hidden: { opacity: 0 },
+  show:   { opacity: 1, transition: { staggerChildren: 0.08 } },
+};
+const item = {
+  hidden: { opacity: 0, y: 16 },
+  show:   { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 22 } },
+};
 
 export default function Dashboard() {
   const [symbol, setSymbol] = useState("R_50");
   const { status, ticks, analysis, reconnectCount } = useDerivWebSocket(symbol);
 
-  // Stagger children animations
-  const container = {
-    hidden: { opacity: 0 },
-    show: {
-      opacity: 1,
-      transition: { staggerChildren: 0.1 },
-    },
-  };
-
-  const item = {
-    hidden: { opacity: 0, y: 20 },
-    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } },
-  };
+  // Derive the last digit from the most recent tick for the digit circle highlight
+  const lastDigit = useMemo(() => {
+    if (ticks.length === 0) return undefined;
+    const quote = ticks[ticks.length - 1].quote;
+    return parseInt(quote.toFixed(5).slice(-1), 10);
+  }, [ticks]);
 
   return (
     <div className="min-h-screen bg-background bg-grid-pattern relative">
       <div className="absolute inset-0 bg-scanlines z-50 pointer-events-none opacity-[0.15]" />
-      
+
       <Header
         symbol={symbol}
         onSymbolChange={setSymbol}
@@ -43,29 +46,34 @@ export default function Dashboard() {
           animate="show"
           className="space-y-6"
         >
-          {/* Top Row: Metrics */}
+          {/* Row 1: Volatility metric cards */}
           <motion.div variants={item}>
             <MetricsPanel metrics={analysis?.volatility} />
           </motion.div>
 
-          {/* Middle Row: Chart & Digits */}
+          {/* Row 2: Live price chart (left 2/3) + digit circles (right 1/3) */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <motion.div variants={item} className="lg:col-span-2">
               <ChartPanel ticks={ticks} symbol={symbol} />
             </motion.div>
             <motion.div variants={item} className="lg:col-span-1">
-              <DigitDistribution stats={analysis?.digits} />
+              <DigitCircles stats={analysis?.digits} lastDigit={lastDigit} />
             </motion.div>
           </div>
 
-          {/* Bottom Row: AI Recommendations */}
+          {/* Row 3: AI recommendations for the selected symbol */}
           <motion.div variants={item}>
             <RecommendationsTable rows={analysis?.recommendations} />
+          </motion.div>
+
+          {/* Row 4: All volatility indices — digit circles + predictions */}
+          <motion.div variants={item}>
+            <AllVolatilitiesGrid />
           </motion.div>
         </motion.div>
       </main>
 
-      {/* Footer Status */}
+      {/* Footer */}
       <footer className="w-full border-t border-border/50 bg-background/80 backdrop-blur mt-auto">
         <div className="max-w-[1600px] mx-auto px-4 py-3 flex items-center justify-between text-[11px] text-muted-foreground font-mono uppercase tracking-widest">
           <div className="flex items-center gap-4">
@@ -82,7 +90,7 @@ export default function Dashboard() {
               </span>
             )}
             {reconnectCount > 0 && (
-              <span className="text-warning">Reconnects: {reconnectCount}</span>
+              <span className="text-amber-400">Reconnects: {reconnectCount}</span>
             )}
           </div>
         </div>
