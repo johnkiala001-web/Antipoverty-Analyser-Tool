@@ -28,7 +28,7 @@ export interface OverUnderStats {
 export interface RecommendationRow {
   contract: string;
   direction: string;
-  /** The specific trade label, e.g. "Over 3", "Under 6", "Match 7", "Differs ≠ 4" */
+  /** Full trade label: "Over 4", "Under 7", "Match 3", "Differs ≠ 3", "Even", "Odd" */
   tradeLabel: string;
   probability: number;
   recommended: boolean;
@@ -41,6 +41,91 @@ export interface AnalysisResult {
   recommendations: RecommendationRow[];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DIGIT EXTRACTION
+// Use the natural JavaScript string representation of the float so that
+// trailing zeros added by toFixed() don't mislead the analysis.
+// e.g. quote=106.7649 → "106.7649" → last char "9"   ✓
+//      quote=106.7640 → JS stores as 106.764 → "106.764" → last char "4"
+// This matches Deriv's actual tick precision far better than toFixed(5).
+// ─────────────────────────────────────────────────────────────────────────────
+export function extractLastDigit(quote: number): number {
+  const s = quote.toString();
+  const dot = s.indexOf(".");
+  if (dot === -1) return Math.abs(Math.floor(quote)) % 10;
+  // Last character in the natural decimal representation
+  return parseInt(s[s.length - 1], 10);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BARRIER SELECTION — picks a "meaningful" barrier
+//
+// Goal: a barrier where the estimated win probability is in [MIN, MAX],
+// as close to TARGET as possible. This avoids trivially easy trades like
+// "Under 1 (99%)" or "Over 8 (1%)".
+//
+// If no barrier falls in the sweet-spot, we broaden to FLOOR–CEILING.
+// Last resort: pick the second-highest probability to avoid the extreme.
+// ─────────────────────────────────────────────────────────────────────────────
+const TARGET   = 0.58; // ideal win probability
+const MIN_GOOD = 0.52; // sweet-spot lower bound
+const MAX_GOOD = 0.80; // sweet-spot upper bound
+const MIN_OK   = 0.38; // broader fallback lower
+const MAX_OK   = 0.88; // broader fallback upper
+
+interface BarrierResult { barrier: number; prob: number }
+
+function pickBarrier(
+  candidates: Array<{ x: number; prob: number }>
+): BarrierResult {
+  const annotated = candidates.map((c) => ({
+    ...c,
+    dist: Math.abs(c.prob - TARGET),
+  }));
+
+  // 1. Sweet-spot [MIN_GOOD, MAX_GOOD]
+  const good = annotated.filter((c) => c.prob >= MIN_GOOD && c.prob <= MAX_GOOD);
+  if (good.length > 0) {
+    good.sort((a, b) => a.dist - b.dist);
+    return { barrier: good[0].x, prob: good[0].prob };
+  }
+
+  // 2. Broader OK range [MIN_OK, MAX_OK]
+  const ok = annotated.filter((c) => c.prob >= MIN_OK && c.prob <= MAX_OK);
+  if (ok.length > 0) {
+    ok.sort((a, b) => a.dist - b.dist);
+    return { barrier: ok[0].x, prob: ok[0].prob };
+  }
+
+  // 3. Second-best (skip the extreme #1) so we avoid trivial suggestions
+  annotated.sort((a, b) => b.prob - a.prob);
+  const pick = annotated[1] ?? annotated[0];
+  return { barrier: pick.x, prob: pick.prob };
+}
+
+function findOverBarrier(digitProbs: number[]): BarrierResult {
+  const candidates = [];
+  for (let x = 0; x <= 8; x++) {
+    let prob = 0;
+    for (let d = x + 1; d <= 9; d++) prob += digitProbs[d];
+    candidates.push({ x, prob });
+  }
+  return pickBarrier(candidates);
+}
+
+function findUnderBarrier(digitProbs: number[]): BarrierResult {
+  const candidates = [];
+  for (let x = 1; x <= 9; x++) {
+    let prob = 0;
+    for (let d = 0; d < x; d++) prob += digitProbs[d];
+    candidates.push({ x, prob });
+  }
+  return pickBarrier(candidates);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN ANALYSIS
+// ─────────────────────────────────────────────────────────────────────────────
 export function computeAnalysis(ticks: Tick[]): AnalysisResult | null {
   if (ticks.length < 2) return null;
 
@@ -50,149 +135,109 @@ export function computeAnalysis(ticks: Tick[]): AnalysisResult | null {
     changes.push(prices[i] - prices[i - 1]);
   }
 
-  // ─── Volatility ────────────────────────────────────────────────────────────
+  // ── Volatility ─────────────────────────────────────────────────────────────
   const meanChange = changes.reduce((a, b) => a + b, 0) / changes.length;
   const variance =
-    changes.reduce((a, b) => a + Math.pow(b - meanChange, 2), 0) /
-    changes.length;
+    changes.reduce((a, b) => a + Math.pow(b - meanChange, 2), 0) / changes.length;
   const stdDev = Math.sqrt(variance);
 
   const trueRanges = changes.map(Math.abs);
-  const atrWindow = trueRanges.slice(-14);
+  const atrWindow  = trueRanges.slice(-14);
   const atr = atrWindow.length
     ? atrWindow.reduce((a, b) => a + b, 0) / atrWindow.length
     : 0;
 
-  const high = Math.max(...prices);
-  const low = Math.min(...prices);
+  const high  = Math.max(...prices);
+  const low   = Math.min(...prices);
   const range = high - low;
 
   const volatility = { stdDev, atr, high, low, range };
 
-  // ─── Last-Digit Analysis ───────────────────────────────────────────────────
-  // Extract the last decimal digit from each price using 5dp string representation
-  const lastDigits = prices.map((p) => {
-    const s = p.toFixed(5);
-    return parseInt(s[s.length - 1], 10);
-  });
+  // ── Last-Digit Distribution ────────────────────────────────────────────────
+  // Use extractLastDigit() which relies on the natural float string, not toFixed(5),
+  // so digits like "9" in "106.7649" are captured instead of the padded "0".
+  const lastDigits = prices.map(extractLastDigit);
 
   const digitCounts = Array(10).fill(0) as number[];
   lastDigits.forEach((d) => digitCounts[d]++);
-  const total = lastDigits.length;
+  const total      = lastDigits.length;
   const digitProbs = digitCounts.map((c) => c / total);
 
   const evenCount =
     digitCounts[0] + digitCounts[2] + digitCounts[4] +
     digitCounts[6] + digitCounts[8];
   const evenProb = evenCount / total;
-  const oddProb = 1 - evenProb;
+  const oddProb  = 1 - evenProb;
 
-  // Modal digit = most frequently occurring last digit
   let modalDigit = 0;
-  let maxCount = -1;
+  let maxCount   = -1;
   digitCounts.forEach((c, i) => {
-    if (c > maxCount) {
-      maxCount = c;
-      modalDigit = i;
-    }
+    if (c > maxCount) { maxCount = c; modalDigit = i; }
   });
   const differProb = 1 - digitProbs[modalDigit];
 
   const digitsStats: DigitStats = {
-    digitCounts,
-    digitProbs,
-    evenProb,
-    oddProb,
-    modalDigit,
-    differProb,
+    digitCounts, digitProbs, evenProb, oddProb, modalDigit, differProb,
   };
 
-  // ─── Over/Under Barrier Selection ──────────────────────────────────────────
-  // "Over X" wins when the next tick's last digit is STRICTLY GREATER than X.
-  //   Valid barriers for Over: 0–8  (Over 9 is impossible — no digit > 9)
-  //   P(Over X) = sum of digitProbs[X+1 .. 9]
-  //
-  // "Under X" wins when the next tick's last digit is STRICTLY LESS than X.
-  //   Valid barriers for Under: 1–9  (Under 0 is impossible — no digit < 0)
-  //   P(Under X) = sum of digitProbs[0 .. X-1]
-  //
-  // We pick the barrier that maximises the win probability in each direction.
+  // ── Over / Under — smart barrier selection ─────────────────────────────────
+  const overResult  = findOverBarrier(digitProbs);
+  const underResult = findUnderBarrier(digitProbs);
 
-  let bestOverBarrier = 0;
-  let bestOverProb = 0;
-  for (let x = 0; x <= 8; x++) {
-    let prob = 0;
-    for (let d = x + 1; d <= 9; d++) prob += digitProbs[d];
-    if (prob > bestOverProb) {
-      bestOverProb = prob;
-      bestOverBarrier = x;
-    }
-  }
-
-  let bestUnderBarrier = 9;
-  let bestUnderProb = 0;
-  for (let x = 1; x <= 9; x++) {
-    let prob = 0;
-    for (let d = 0; d < x; d++) prob += digitProbs[d];
-    if (prob > bestUnderProb) {
-      bestUnderProb = prob;
-      bestUnderBarrier = x;
-    }
-  }
-
-  // Clamp to avoid degenerate display
-  bestOverProb = Math.max(0.01, Math.min(0.99, bestOverProb));
-  bestUnderProb = Math.max(0.01, Math.min(0.99, bestUnderProb));
+  // Clamp
+  const bestOverProb  = Math.max(0.01, Math.min(0.99, overResult.prob));
+  const bestUnderProb = Math.max(0.01, Math.min(0.99, underResult.prob));
 
   const overUnder = { overProb: bestOverProb, underProb: bestUnderProb };
 
-  // ─── Recommendation Rows ───────────────────────────────────────────────────
-  const overIsRec = bestOverProb >= bestUnderProb;
+  // ── Recommendation Rows ────────────────────────────────────────────────────
+  // For Even/Odd, if probabilities are very close, show 50% explicitly
+  const evenIsRec  = evenProb >= oddProb;
+  const overIsRec  = bestOverProb >= bestUnderProb;
+  const matchIsRec = differProb < digitProbs[modalDigit];
 
   const recommendations: RecommendationRow[] = [
     {
-      contract: "Over/Under",
-      direction: "Over",
-      tradeLabel: `Over ${bestOverBarrier}`,
+      contract:    "Over/Under",
+      direction:   "Over",
+      tradeLabel:  `Over ${overResult.barrier}`,
       probability: bestOverProb,
       recommended: overIsRec,
     },
     {
-      contract: "Over/Under",
-      direction: "Under",
-      tradeLabel: `Under ${bestUnderBarrier}`,
+      contract:    "Over/Under",
+      direction:   "Under",
+      tradeLabel:  `Under ${underResult.barrier}`,
       probability: bestUnderProb,
       recommended: !overIsRec,
     },
     {
-      contract: "Even/Odd",
-      direction: "Even",
-      tradeLabel: "Even",
+      contract:    "Even/Odd",
+      direction:   "Even",
+      tradeLabel:  "Even",
       probability: evenProb,
-      recommended: evenProb >= oddProb,
+      recommended: evenIsRec,
     },
     {
-      contract: "Even/Odd",
-      direction: "Odd",
-      tradeLabel: "Odd",
+      contract:    "Even/Odd",
+      direction:   "Odd",
+      tradeLabel:  "Odd",
       probability: oddProb,
-      recommended: oddProb > evenProb,
+      recommended: !evenIsRec,
     },
     {
-      contract: "Matches/Differs",
-      direction: "Match",
-      // Recommend matching the modal digit — it has appeared most often
-      tradeLabel: `Match ${modalDigit}`,
+      contract:    "Matches/Differs",
+      direction:   "Match",
+      tradeLabel:  `Match ${modalDigit}`,
       probability: digitProbs[modalDigit],
-      recommended: differProb < digitProbs[modalDigit],
+      recommended: matchIsRec,
     },
     {
-      contract: "Matches/Differs",
-      direction: "Differs",
-      // Recommend differing from the modal digit — anything else is more likely
-      tradeLabel: `Differs ≠ ${modalDigit}`,
+      contract:    "Matches/Differs",
+      direction:   "Differs",
+      tradeLabel:  `Differs ≠ ${modalDigit}`,
       probability: differProb,
-      recommended: differProb >= digitProbs[modalDigit],
+      recommended: !matchIsRec,
     },
   ];
 
