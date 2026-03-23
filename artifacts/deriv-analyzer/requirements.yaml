@@ -1,0 +1,14 @@
+packages:
+  "recharts": "Powerful, responsive chart library for the price and digit distribution charts"
+  "framer-motion": "Smooth layout animations and entry transitions for the terminal dashboard"
+  "date-fns": "For formatting epoch timestamps on the tick chart"
+  "clsx": "Utility for conditionally joining classNames"
+  "tailwind-merge": "Utility to efficiently merge Tailwind CSS classes"
+  "lucide-react": "Beautiful, consistent iconography"
+
+images: []
+
+notes:
+  - "The app operates completely client-side, connecting directly to the Deriv WebSocket API."
+  - "No backend API server is required for this artifact."
+  - "A dark-mode, professional financial terminal aesthetic is applied globally."
