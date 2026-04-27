@@ -1,6 +1,6 @@
 kind = "web"
 previewPath = "/"
-title = "Deriv AI Analyzer"
+title = "Antipoverty Analyzer tool"
 version = "1.0.0"
 id = "artifacts/deriv-analyzer"
 router = "path"
