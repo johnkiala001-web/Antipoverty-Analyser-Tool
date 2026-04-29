@@ -12,5 +12,5 @@
       "@workspace/db/schema": ["../../lib/db/src/schema/index.ts"]
     }
   },
-  "include": ["src", "api"]
+  "include": ["src"]
 }
