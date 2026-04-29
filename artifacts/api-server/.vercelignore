@@ -1,0 +1,10 @@
+.replit-artifact/
+.replit
+replit.nix
+.upm/
+.config/
+.cache/
+.local/
+node_modules/
+dist/
+*.log
