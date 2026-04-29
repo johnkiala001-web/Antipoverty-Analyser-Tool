@@ -1,12 +1,50 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { DigitStats } from "@/lib/math";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
 interface DigitCirclesProps {
   stats?: DigitStats;
-  /** The last digit from the most recent tick — highlighted with amber pulse */
   lastDigit?: number;
+}
+
+// Rank 0 = lowest probability, rank 9 = highest probability
+function getRanks(digitProbs: number[]): number[] {
+  const indexed = digitProbs.map((p, i) => ({ p, i }));
+  const sorted  = [...indexed].sort((a, b) => a.p - b.p);
+  const ranks   = new Array(10).fill(0) as number[];
+  sorted.forEach(({ i }, rank) => { ranks[i] = rank; });
+  return ranks;
+}
+
+// Bar color based on rank (0=lowest, 9=highest)
+function barColor(rank: number): string {
+  if (rank === 9) return "#10b981"; // green — highest
+  if (rank === 8) return "#3b82f6"; // blue  — 2nd highest
+  if (rank === 1) return "#f97316"; // orange — 2nd lowest
+  if (rank === 0) return "#ef4444"; // red   — lowest
+  return "#64748b";                 // slate — middle ranks
+}
+
+// Background color for the circle
+function circleBg(rank: number, isEven: boolean, intensity: number): string {
+  if (rank === 9) return `rgba(16, 185, 129, ${0.12 + intensity * 0.40})`;
+  if (rank === 8) return `rgba(59, 130, 246, ${0.10 + intensity * 0.38})`;
+  if (rank === 1) return `rgba(249, 115, 22, ${0.10 + intensity * 0.30})`;
+  if (rank === 0) return `rgba(239, 68, 68,  ${0.10 + intensity * 0.30})`;
+  return isEven
+    ? `rgba(59, 130, 246,  ${0.06 + intensity * 0.28})`
+    : `rgba(168, 85, 247, ${0.06 + intensity * 0.28})`;
+}
+
+// Text color for the digit number
+function digitTextClass(rank: number, isLast: boolean): string {
+  if (isLast)  return "text-amber-300";
+  if (rank === 9) return "text-emerald-300";
+  if (rank === 8) return "text-blue-300";
+  if (rank === 1) return "text-orange-300";
+  if (rank === 0) return "text-red-400";
+  return "text-foreground/75";
 }
 
 export function DigitCircles({ stats, lastDigit }: DigitCirclesProps) {
@@ -33,6 +71,7 @@ export function DigitCircles({ stats, lastDigit }: DigitCirclesProps) {
   }
 
   const maxProb = Math.max(...stats.digitProbs);
+  const ranks   = getRanks(stats.digitProbs);
 
   return (
     <div className="terminal-card p-5 flex flex-col gap-5 h-full">
@@ -84,29 +123,28 @@ export function DigitCircles({ stats, lastDigit }: DigitCirclesProps) {
           const isLast    = digit === lastDigit;
           const pctNum    = prob * 100;
           const intensity = maxProb > 0 ? prob / maxProb : 0;
+          const rank      = ranks[digit];
 
-          const circleBg = isEven
-            ? `rgba(59, 130, 246, ${0.08 + intensity * 0.55})`
-            : `rgba(168, 85, 247, ${0.08 + intensity * 0.55})`;
+          const bg       = circleBg(rank, isEven, intensity);
+          const bar      = barColor(rank);
 
           const ringColor = isLast
             ? "#f59e0b"
-            : isModal
-            ? (isEven ? "#3b82f6" : "#a855f7")
+            : rank === 9
+            ? "#10b981"
+            : rank === 8
+            ? "#3b82f6"
+            : rank === 0
+            ? "#ef4444"
+            : rank === 1
+            ? "#f97316"
             : "transparent";
-
-          // Gauge colors
-          const gaugeColor = isEven
-            ? isModal ? "rgb(96,165,250)" : "rgba(59,130,246,0.75)"
-            : isModal ? "rgb(192,132,252)" : "rgba(168,85,247,0.75)";
-
-          const gaugeBg = isEven ? "rgba(59,130,246,0.10)" : "rgba(168,85,247,0.10)";
 
           return (
             <div key={digit} className="flex-1 flex flex-col items-center gap-2 min-w-0">
-              {/* Circle */}
+              {/* ── Circle ── */}
               <div className="relative w-full aspect-square max-w-[52px]">
-                {/* Pulse ring for last digit */}
+                {/* Pulse ring on last tick digit */}
                 <AnimatePresence>
                   {isLast && (
                     <motion.div
@@ -120,77 +158,92 @@ export function DigitCircles({ stats, lastDigit }: DigitCirclesProps) {
                   )}
                 </AnimatePresence>
 
-                {/* Main circle */}
+                {/* SVG arc progress ring */}
+                <svg
+                  className="absolute inset-0 w-full h-full -rotate-90"
+                  viewBox="0 0 44 44"
+                >
+                  {/* Track */}
+                  <circle
+                    cx="22" cy="22" r="19"
+                    fill="none"
+                    stroke="rgba(255,255,255,0.06)"
+                    strokeWidth="2.5"
+                  />
+                  {/* Fill arc */}
+                  <motion.circle
+                    cx="22" cy="22" r="19"
+                    fill="none"
+                    stroke={bar}
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 19}
+                    animate={{
+                      strokeDashoffset: 2 * Math.PI * 19 * (1 - prob),
+                      opacity: prob > 0 ? 1 : 0,
+                    }}
+                    transition={{ type: "spring" as const, stiffness: 90, damping: 18 }}
+                  />
+                </svg>
+
+                {/* Main circle body */}
                 <motion.div
                   layout
                   animate={{
-                    background: circleBg,
+                    background: bg,
                     borderColor: ringColor,
-                    boxShadow: isModal
-                      ? `0 0 16px 3px ${isEven ? "rgba(59,130,246,0.35)" : "rgba(168,85,247,0.35)"}`
-                      : isLast
-                      ? "0 0 12px 3px rgba(245,158,11,0.45)"
+                    boxShadow: isLast
+                      ? "0 0 14px 3px rgba(245,158,11,0.5)"
+                      : isModal
+                      ? `0 0 14px 3px ${bar}55`
                       : "0 0 0 0 transparent",
                   }}
-                  transition={{ duration: 0.4 }}
-                  className="absolute inset-0 rounded-full flex items-center justify-center border-2 select-none cursor-default"
+                  transition={{ duration: 0.35 }}
+                  className="absolute inset-[5px] rounded-full flex items-center justify-center border select-none cursor-default"
                 >
-                  <span
-                    className={cn(
-                      "font-mono font-bold text-base leading-none",
-                      isModal
-                        ? isEven ? "text-blue-300" : "text-purple-300"
-                        : isLast
-                        ? "text-amber-300"
-                        : "text-foreground/80"
-                    )}
-                  >
+                  <span className={cn("font-mono font-bold text-base leading-none", digitTextClass(rank, isLast))}>
                     {digit}
                   </span>
                 </motion.div>
               </div>
 
-              {/* ── Shifting Gauger ── */}
-              {/* Track */}
+              {/* ── Horizontal bar with moving cursor ── */}
               <div
-                className="w-full h-3 rounded-full relative overflow-hidden"
-                style={{ background: gaugeBg }}
+                className="w-full h-[5px] rounded-full relative overflow-visible"
+                style={{ background: "rgba(255,255,255,0.06)" }}
               >
                 {/* Animated fill */}
                 <motion.div
                   className="absolute left-0 top-0 h-full rounded-full"
-                  style={{ background: gaugeColor }}
+                  style={{ background: bar }}
                   animate={{ width: `${pctNum}%` }}
                   transition={{ type: "spring", stiffness: 90, damping: 18, mass: 0.8 }}
                 />
 
-                {/* Moving tip marker */}
+                {/* Moving cursor marker */}
                 <motion.div
-                  className={cn(
-                    "absolute top-1/2 -translate-y-1/2 w-[5px] h-[14px] rounded-sm",
-                    isLast ? "bg-amber-400 shadow-[0_0_6px_rgba(245,158,11,0.8)]" : "bg-white/80"
-                  )}
+                  className="absolute top-1/2 -translate-y-1/2 w-[5px] h-[13px] rounded-sm shadow-md"
+                  style={{
+                    background: isLast ? "#f59e0b" : "#ffffff",
+                    boxShadow: isLast
+                      ? "0 0 6px rgba(245,158,11,0.9)"
+                      : "0 0 4px rgba(255,255,255,0.5)",
+                  }}
                   animate={{ left: `calc(${pctNum}% - 2.5px)` }}
                   transition={{ type: "spring", stiffness: 90, damping: 18, mass: 0.8 }}
                 />
               </div>
 
-              {/* Percentage label — animates on change */}
+              {/* ── Percentage label ── */}
               <motion.span
-                key={Math.round(pctNum * 10)}
+                key={Math.round(pctNum * 100)}
                 initial={{ opacity: 0, scale: 0.85 }}
                 animate={{ opacity: 1, scale: 1 }}
-                transition={{ duration: 0.25 }}
-                className={cn(
-                  "font-mono text-[10px] tabular-nums text-center leading-none",
-                  isModal
-                    ? isEven ? "text-blue-400 font-bold" : "text-purple-400 font-bold"
-                    : isLast
-                    ? "text-amber-400 font-bold"
-                    : "text-muted-foreground"
-                )}
+                transition={{ duration: 0.22 }}
+                className="font-mono text-[10px] tabular-nums text-center leading-none font-semibold"
+                style={{ color: isLast ? "#f59e0b" : bar }}
               >
-                {pctNum.toFixed(1)}%
+                {pctNum.toFixed(2)}%
               </motion.span>
             </div>
           );
@@ -198,22 +251,26 @@ export function DigitCircles({ stats, lastDigit }: DigitCirclesProps) {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-2 border-t border-border/30 text-[10px] text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-2 border-t border-border/30 text-[10px] text-muted-foreground">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-blue-500/60" />
-          <span>Even (0,2,4,6,8)</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+          <span className="text-emerald-400">Highest</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-purple-500/60" />
-          <span>Odd (1,3,5,7,9)</span>
+          <div className="w-2.5 h-2.5 rounded-full bg-blue-500" />
+          <span className="text-blue-400">2nd Highest</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+          <span className="text-orange-400">2nd Lowest</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2.5 h-2.5 rounded-full bg-red-500" />
+          <span className="text-red-400">Lowest</span>
         </div>
         <div className="flex items-center gap-1.5 ml-auto">
           <div className="w-2.5 h-2.5 rounded-full border border-amber-400" />
           <span className="text-amber-400">Last tick digit</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full border-2 border-blue-400" />
-          <span>Most frequent</span>
         </div>
       </div>
     </div>

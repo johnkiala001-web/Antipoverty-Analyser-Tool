@@ -243,3 +243,78 @@ export function computeAnalysis(ticks: Tick[]): AnalysisResult | null {
 
   return { volatility, digits: digitsStats, overUnder, recommendations };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BARRIER-CYCLING RECOMMENDATIONS
+// Over cycles through barriers [1, 2, 3, 4] and Under cycles through [8, 7, 6].
+// Probabilities are recomputed for the specific barrier chosen.
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildRecsWithBarriers(
+  analysis: AnalysisResult,
+  overBarrier: number,
+  underBarrier: number
+): RecommendationRow[] {
+  const { digits } = analysis;
+  const { digitProbs, evenProb, oddProb, modalDigit } = digits;
+
+  // Probability that last digit is strictly above overBarrier
+  let overProb = 0;
+  for (let d = overBarrier + 1; d <= 9; d++) overProb += digitProbs[d];
+  overProb = Math.max(0.01, Math.min(0.99, overProb));
+
+  // Probability that last digit is strictly below underBarrier
+  let underProb = 0;
+  for (let d = 0; d < underBarrier; d++) underProb += digitProbs[d];
+  underProb = Math.max(0.01, Math.min(0.99, underProb));
+
+  const differProb = 1 - digitProbs[modalDigit];
+
+  const evenIsRec  = evenProb >= oddProb;
+  const overIsRec  = overProb >= underProb;
+  const matchIsRec = differProb < digitProbs[modalDigit];
+
+  return [
+    {
+      contract:    "Over/Under",
+      direction:   "Over",
+      tradeLabel:  `Over ${overBarrier}`,
+      probability: overProb,
+      recommended: overIsRec,
+    },
+    {
+      contract:    "Over/Under",
+      direction:   "Under",
+      tradeLabel:  `Under ${underBarrier}`,
+      probability: underProb,
+      recommended: !overIsRec,
+    },
+    {
+      contract:    "Even/Odd",
+      direction:   "Even",
+      tradeLabel:  "Even",
+      probability: evenProb,
+      recommended: evenIsRec,
+    },
+    {
+      contract:    "Even/Odd",
+      direction:   "Odd",
+      tradeLabel:  "Odd",
+      probability: oddProb,
+      recommended: !evenIsRec,
+    },
+    {
+      contract:    "Matches/Differs",
+      direction:   "Match",
+      tradeLabel:  `Match ${modalDigit}`,
+      probability: digitProbs[modalDigit],
+      recommended: matchIsRec,
+    },
+    {
+      contract:    "Matches/Differs",
+      direction:   "Differs",
+      tradeLabel:  `Differs ≠ ${modalDigit}`,
+      probability: differProb,
+      recommended: !matchIsRec,
+    },
+  ];
+}

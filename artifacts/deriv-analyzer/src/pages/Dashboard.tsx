@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { Header } from "@/components/dashboard/Header";
 import { ChartPanel } from "@/components/dashboard/ChartPanel";
 import { MetricsPanel } from "@/components/dashboard/MetricsPanel";
@@ -6,6 +6,7 @@ import { DigitCircles } from "@/components/dashboard/DigitCircles";
 import { RecommendationsTable } from "@/components/dashboard/RecommendationsTable";
 import { AllVolatilitiesGrid } from "@/components/dashboard/AllVolatilitiesGrid";
 import { useDerivWebSocket } from "@/hooks/use-deriv-ws";
+import { buildRecsWithBarriers, type AnalysisResult, type RecommendationRow } from "@/lib/math";
 import { motion } from "framer-motion";
 
 const container = {
@@ -14,12 +15,57 @@ const container = {
 };
 const item = {
   hidden: { opacity: 0, y: 16 },
-  show:   { opacity: 1, y: 0, transition: { type: "spring", stiffness: 280, damping: 22 } },
+  show:   { opacity: 1, y: 0, transition: { type: "spring" as const, stiffness: 280, damping: 22 } },
 };
+
+// Cycling barriers: Over cycles 1→2→3→4→1…  Under cycles 8→7→6→8…
+const OVER_BARRIERS  = [1, 2, 3, 4];
+const UNDER_BARRIERS = [8, 7, 6];
+const RECS_UPDATE_MS = 60_000; // 1 minute
 
 export default function Dashboard() {
   const [symbol, setSymbol] = useState("R_50");
   const { status, ticks, analysis, reconnectCount } = useDerivWebSocket(symbol);
+
+  // Stable recommendations — only update once per minute
+  const [stableRecs, setStableRecs] = useState<RecommendationRow[] | null>(null);
+  const cycleRef      = useRef(0);
+  const lastUpdateRef = useRef(0);
+  const analysisRef   = useRef<AnalysisResult | null>(null);
+
+  // Keep the analysis ref fresh so the interval always uses latest data
+  useEffect(() => {
+    analysisRef.current = analysis;
+  }, [analysis]);
+
+  // Advance cycle + rebuild stable recommendations
+  const advanceCycle = (a: AnalysisResult) => {
+    const idx          = cycleRef.current;
+    const overBarrier  = OVER_BARRIERS[idx % OVER_BARRIERS.length];
+    const underBarrier = UNDER_BARRIERS[idx % UNDER_BARRIERS.length];
+    cycleRef.current   = idx + 1;
+    lastUpdateRef.current = Date.now();
+    return buildRecsWithBarriers(a, overBarrier, underBarrier);
+  };
+
+  // First paint — set stable recommendations immediately when analysis arrives
+  useEffect(() => {
+    if (!analysis) return;
+    if (stableRecs !== null) return;           // already initialised
+    setStableRecs(advanceCycle(analysis));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis]);
+
+  // Interval — advance every 60 s regardless of whether analysis changed
+  useEffect(() => {
+    const id = setInterval(() => {
+      const a = analysisRef.current;
+      if (!a) return;
+      setStableRecs(advanceCycle(a));
+    }, RECS_UPDATE_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Derive the last digit from the most recent tick for the digit circle highlight
   const lastDigit = useMemo(() => {
@@ -61,9 +107,9 @@ export default function Dashboard() {
             </motion.div>
           </div>
 
-          {/* Row 3: AI recommendations for the selected symbol */}
+          {/* Row 3: AI recommendations — stable, updates every 1 min */}
           <motion.div variants={item}>
-            <RecommendationsTable rows={analysis?.recommendations} />
+            <RecommendationsTable rows={stableRecs ?? undefined} />
           </motion.div>
 
           {/* Row 4: All volatility indices — digit circles + predictions */}

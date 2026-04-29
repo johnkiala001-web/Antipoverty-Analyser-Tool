@@ -30,10 +30,6 @@ args = "Deriv Tick Analyzer"
 task = "workflow.run"
 args = "Start application"
 
-[[workflows.workflow.tasks]]
-task = "workflow.run"
-args = "API Server"
-
 [[workflows.workflow]]
 name = "Deriv Tick Analyzer"
 author = "agent"
@@ -56,18 +52,6 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
-
-[[workflows.workflow]]
-name = "API Server"
-author = "agent"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=3001 pnpm --filter @workspace/api-server run dev"
-waitForPort = 3001
-
-[workflows.workflow.metadata]
-outputType = "console"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
