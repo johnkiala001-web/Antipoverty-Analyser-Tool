@@ -90,9 +90,17 @@ const banner = {
 import __bannerPath from 'node:path';
 import __bannerUrl from 'node:url';
 
-globalThis.require = __bannerCrReq(import.meta.url);
-globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
-globalThis.__dirname = __bannerPath.dirname(globalThis.__filename);
+try {
+  if (typeof globalThis.require === 'undefined') {
+    globalThis.require = __bannerCrReq(import.meta.url);
+  }
+  if (typeof globalThis.__filename === 'undefined') {
+    globalThis.__filename = __bannerUrl.fileURLToPath(import.meta.url);
+  }
+  if (typeof globalThis.__dirname === 'undefined') {
+    globalThis.__dirname = __bannerPath.dirname(globalThis.__filename || __bannerUrl.fileURLToPath(import.meta.url));
+  }
+} catch (_bannerErr) {}
 `,
 };
 
