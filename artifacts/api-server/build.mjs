@@ -126,16 +126,17 @@ async function buildAll() {
     banner,
   });
 
-  // Vercel serverless handler bundle — single self-contained file in api/
+  // Vercel serverless handler bundle — single self-contained file in api/.
+  // Filename uses Vercel's optional catch-all routing convention so this one
+  // function handles /api, /api/healthz, /api/foo/bar, etc. without rewrites.
   // No pino transports plugin: production logger writes plain JSON to stdout,
-  // which Vercel captures natively. This keeps api/ to exactly one function file.
+  // which Vercel captures natively.
   await esbuild({
     entryPoints: [path.resolve(artifactDir, "src/index.ts")],
     platform: "node",
     bundle: true,
     format: "esm",
-    outdir: apiDir,
-    outExtension: { ".js": ".mjs" },
+    outfile: path.join(apiDir, "[[...path]].mjs"),
     logLevel: "info",
     external: externalNative,
     sourcemap: "linked",
