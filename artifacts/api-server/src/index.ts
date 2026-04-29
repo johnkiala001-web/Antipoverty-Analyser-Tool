@@ -1,17 +1,36 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import app from "./app";
+
+type ExpressLike = (req: IncomingMessage, res: ServerResponse) => void;
+
+let cachedApp: ExpressLike | undefined;
+let cachedInitError: unknown;
+
+async function getApp(): Promise<ExpressLike> {
+  if (cachedApp) return cachedApp;
+  if (cachedInitError) throw cachedInitError;
+  try {
+    const mod = await import("./app");
+    cachedApp = mod.default as unknown as ExpressLike;
+    return cachedApp;
+  } catch (err) {
+    cachedInitError = err;
+    throw err;
+  }
+}
 
 export default async function handler(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
   try {
+    const app = await getApp();
     return await new Promise<void>((resolve) => {
       res.on("close", resolve);
       res.on("finish", resolve);
       app(req, res);
     });
   } catch (err) {
+    const e = err as { message?: string; stack?: string; code?: string };
     console.error("[handler] uncaught:", err);
     if (!res.headersSent) {
       res.statusCode = 500;
@@ -19,7 +38,9 @@ export default async function handler(
       res.end(
         JSON.stringify({
           error: "internal_error",
-          message: err instanceof Error ? err.message : String(err),
+          message: e?.message ?? String(err),
+          code: e?.code,
+          stack: e?.stack,
         }),
       );
     } else {
